@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Harinas y Pulpas Don Pedro — Sistema de diseño
+   Paleta tomada del logo: rojo/vino, amarillo dorado, blanco y negro.
+   ============================================================ */
+
+:root {
+  --rojo: #b01e2e;        /* rojo marca (etiqueta) */
+  --rojo-oscuro: #7c2118; /* vino del badge del logo */
+  --rojo-claro: #d64236;
+  --amarillo: #f5b91e;    /* dorado de la estrella */
+  --amarillo-claro: #ffd257;
+  --crema: #fff8ec;       /* blanco cálido de fondo */
+  --crema-2: #fdeecf;
+  --negro: #1a1210;       /* negro cálido del texto */
+  --negro-suave: #3a2c27;
+  --gris: #8a7a72;
+
+  --background: var(--crema);
+  --foreground: var(--negro);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-rojo: var(--rojo);
+  --color-rojo-oscuro: var(--rojo-oscuro);
+  --color-rojo-claro: var(--rojo-claro);
+  --color-amarillo: var(--amarillo);
+  --color-amarillo-claro: var(--amarillo-claro);
+  --color-crema: var(--crema);
+  --color-crema-2: var(--crema-2);
+  --color-negro: var(--negro);
+  --color-negro-suave: var(--negro-suave);
+  --color-gris: var(--gris);
+  --font-sans: var(--font-poppins);
+  --font-display: var(--font-fraunces);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5rem;
+}
+
+body {
+  background: var(--crema);
+  color: var(--negro);
+  font-family: var(--font-poppins), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+}
+
+/* Utilidades de marca */
+.text-balance { text-wrap: balance; }
+
+.brand-gradient {
+  background: linear-gradient(135deg, var(--rojo-oscuro) 0%, var(--rojo) 55%, var(--rojo-claro) 100%);
+}
+
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.06) 1px, transparent 0);
+  background-size: 22px 22px;
+  pointer-events: none;
+}
+
+/* Animaciones suaves */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.reveal {
+  opacity: 0;
+  animation: fadeUp 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+.floaty { animation: floaty 6s ease-in-out infinite; }
+
+@keyframes shine {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Estilos internos de las diapositivas de la presentación */
+.slide-title {
+  font-family: var(--font-fraunces), Georgia, serif;
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.6rem;
+  line-height: 1.15;
+  margin-bottom: 0.75rem;
+}
+@media (min-width: 640px) {
+  .slide-title { font-size: 2rem; }
+}
+.slide-text {
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.6;
+  margin-bottom: 0.6rem;
+}
+.slide-text strong { color: #fff; }
+.slide-list {
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.7;
+  margin-bottom: 0.6rem;
+}
+.slide-list li { margin-bottom: 0.25rem; }
+.slide-list strong { color: #fff; }
+
+/* Scrollbar sutil */
+::selection { background: var(--amarillo); color: var(--negro); }
+
+/* Respeta usuarios con movimiento reducido */
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .floaty { animation: none; opacity: 1; }
+  html { scroll-behavior: auto; }
+}

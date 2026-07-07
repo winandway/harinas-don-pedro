@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <circle cx="32" cy="32" r="30" fill="#7c2118"/>
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#f5b91e" stroke-width="3"/>
+  <path fill="#f5b91e" d="M32 12l5.9 12 13.1 1.9-9.5 9.3 2.2 13-11.7-6.1-11.7 6.1 2.2-13-9.5-9.3 13.1-1.9z"/>
+  <text x="32" y="52" font-family="Georgia, serif" font-size="13" font-weight="bold" fill="#fff8ec" text-anchor="middle">DP</text>
+</svg>
