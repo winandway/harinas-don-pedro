@@ -87,13 +87,8 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
-  icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/marca/logo-harinas-pulpas-don-pedro-1915.png" },
-    ],
-    apple: "/marca/logo-harinas-pulpas-don-pedro-1915.png",
-  },
+  // El favicon y el ícono de Apple se generan desde src/app/icon.png y
+  // src/app/apple-icon.png (logo real de Don Pedro).
 };
 
 const jsonLd = {
