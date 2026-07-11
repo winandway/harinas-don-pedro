@@ -1,7 +1,7 @@
 // Datos centrales de la empresa Harinas y Pulpas Don Pedro.
 // Fuente: material y documentos legales entregados por la empresa (Mérida, Venezuela).
 
-export const SITE_URL = "https://harinas-don-pedro.pages.dev";
+export const SITE_URL = "https://harinadonpedro.com";
 
 export const empresa = {
   nombre: "Harinas y Pulpas Don Pedro",
