@@ -87,6 +87,21 @@ export default function Footer() {
           <p>© {year} {empresa.nombre}. Todos los derechos reservados.</p>
           <p>Hecho con 🌾 en {empresa.estado}, {empresa.pais} · {empresa.eslogan}</p>
         </div>
+
+        <div className="mt-5 pt-4 border-t border-white/10 text-center text-[11px] text-white/50">
+          <p>
+            © {year} harinadonpedro.com | All rights reserved. Developed by{" "}
+            <a
+              href="https://windoce.com"
+              target="_blank"
+              rel="noopener"
+              className="font-semibold text-amarillo-claro hover:text-amarillo transition-colors"
+            >
+              Windoce LLC
+            </a>
+            .
+          </p>
+        </div>
       </div>
     </footer>
   );
