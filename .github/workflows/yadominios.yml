@@ -1,0 +1,45 @@
+name: Publicar en YaDominios Cloud
+
+# Compila el sitio estático (Next.js output: export → carpeta out/) y publica
+# el resultado en la rama `yapanel-build`. El panel de YaDominios Cloud se
+# conecta a ESA rama; cada push a main la reconstruye y republica sola.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: yadominios-build
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Compilar el sitio estático (genera out/)
+        run: npm run build
+
+      - name: Publicar out/ en la rama yapanel-build
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./out
+          publish_branch: yapanel-build
+          force_orphan: true
+          commit_message: "build: publicación estática para YaDominios Cloud"
