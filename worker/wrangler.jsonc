@@ -1,9 +1,14 @@
 {
-  // Config para YaDominios Cloud. El archivo _worker.js (nombre mágico) corre
-  // como worker; aquí solo declaramos los assets para que env.ASSETS quede
-  // enlazado a ./public y el worker pueda servir los estáticos.
-  // env.DB lo inyecta YaDominios automáticamente.
+  // Config para YaDominios Cloud (patrón worker + assets, como OpenNext).
+  // El worker (server.js) atiende /datos y /media; los estáticos salen de ./public.
+  // env.DB y env.ASSETS los inyecta YaDominios. nodejs_compat como en el ejemplo oficial.
   "name": "harinadonpedro",
+  "main": "server.js",
   "compatibility_date": "2026-07-01",
-  "assets": { "directory": "./public", "binding": "ASSETS" }
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  }
 }
