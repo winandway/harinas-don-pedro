@@ -1,8 +1,14 @@
 {
-  // Config del worker para YaDominios Cloud (patrón framework: main + assets).
-  // env.DB (SQLite) y env.ASSETS los inyecta YaDominios automáticamente.
+  // Config del worker para YaDominios Cloud.
+  // El worker corre PRIMERO en las rutas de la API (/datos, /media) y sirve
+  // los estáticos de ./public para el resto (vía env.ASSETS). env.DB lo inyecta
+  // YaDominios automáticamente.
   "name": "harinadonpedro",
   "main": "server.js",
   "compatibility_date": "2026-07-01",
-  "assets": { "directory": "./public" }
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/datos/*", "/media/*"]
+  }
 }
