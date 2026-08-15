@@ -291,8 +291,9 @@ export default {
 
       if (path.startsWith("/datos/")) return json({ error: "No encontrado" }, 404);
 
-      // --- resto: archivos estáticos ---
-      return env.ASSETS.fetch(request);
+      // --- resto: archivos estáticos (YaDominios inyecta env.ASSETS) ---
+      if (env.ASSETS && env.ASSETS.fetch) return env.ASSETS.fetch(request);
+      return new Response("No encontrado", { status: 404 });
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
     }

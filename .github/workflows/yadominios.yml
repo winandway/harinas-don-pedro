@@ -36,13 +36,12 @@ jobs:
       - name: Compilar el sitio estático (genera out/)
         run: npm run build
 
-      - name: Ensamblar worker + assets para YaDominios
+      - name: Ensamblar worker + sitio para YaDominios
         run: |
           rm -rf publish
-          mkdir -p publish/assets
-          cp -r out/. publish/assets/
+          mkdir -p publish/public
+          cp -r out/. publish/public/
           cp worker/_worker.js publish/_worker.js
-          cp worker/wrangler.jsonc publish/wrangler.jsonc
 
       - name: Publicar en la rama yapanel-build
         uses: peaceiris/actions-gh-pages@v4
