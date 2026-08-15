@@ -39,10 +39,9 @@ jobs:
       - name: Ensamblar worker + sitio para YaDominios
         run: |
           rm -rf publish
-          mkdir -p publish/public
-          cp -r out/. publish/public/
-          cp worker/_worker.js publish/server.js
-          cp worker/wrangler.jsonc publish/wrangler.jsonc
+          mkdir -p publish
+          cp -r out/. publish/
+          cp worker/_worker.js publish/_worker.js
 
       - name: Publicar en la rama yapanel-build
         uses: peaceiris/actions-gh-pages@v4

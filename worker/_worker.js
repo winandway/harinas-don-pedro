@@ -210,6 +210,26 @@ export default {
       // --- API de datos ---
       if (path === "/datos/salud") return json({ ok: true });
 
+      // Diagnóstico temporal: qué bindings recibe el worker (solo nombres).
+      if (path === "/datos/debug") {
+        let assetsRoot = null;
+        try {
+          if (env.ASSETS && env.ASSETS.fetch) {
+            const r = await env.ASSETS.fetch(new Request(new URL("/index.html", request.url)));
+            assetsRoot = r.status;
+          }
+        } catch (e) {
+          assetsRoot = "err:" + (e && e.message);
+        }
+        return json({
+          bindings: Object.keys(env || {}),
+          tieneASSETS: !!(env && env.ASSETS),
+          tieneDB: !!(env && env.DB),
+          tieneBUCKET: !!(env && env.BUCKET),
+          indexHtmlStatus: assetsRoot,
+        });
+      }
+
       if (path === "/datos/login" && request.method === "POST") {
         const { usuario, clave } = await request.json();
         const u = await env.DB.prepare("SELECT * FROM usuarios WHERE lower(usuario)=lower(?)").bind((usuario || "").trim()).first();
