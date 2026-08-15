@@ -41,7 +41,7 @@ jobs:
           rm -rf publish
           mkdir -p publish/public
           cp -r out/. publish/public/
-          cp worker/_worker.js publish/server.js
+          cp worker/_worker.js publish/_worker.js
           cp worker/wrangler.jsonc publish/wrangler.jsonc
 
       - name: Publicar en la rama yapanel-build

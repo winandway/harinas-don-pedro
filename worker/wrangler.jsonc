@@ -1,14 +1,9 @@
 {
-  // Config del worker para YaDominios Cloud.
-  // El worker corre PRIMERO en cada petición: atiende la API (/datos, /media)
-  // y para el resto sirve los estáticos de ./public vía env.ASSETS.
+  // Config para YaDominios Cloud. El archivo _worker.js (nombre mágico) corre
+  // como worker; aquí solo declaramos los assets para que env.ASSETS quede
+  // enlazado a ./public y el worker pueda servir los estáticos.
   // env.DB lo inyecta YaDominios automáticamente.
   "name": "harinadonpedro",
-  "main": "server.js",
   "compatibility_date": "2026-07-01",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS",
-    "run_worker_first": true
-  }
+  "assets": { "directory": "./public", "binding": "ASSETS" }
 }
