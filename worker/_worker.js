@@ -292,7 +292,29 @@ export default {
       if (path.startsWith("/datos/")) return json({ error: "No encontrado" }, 404);
 
       // --- resto: archivos estáticos (YaDominios inyecta env.ASSETS) ---
-      if (env.ASSETS && env.ASSETS.fetch) return env.ASSETS.fetch(request);
+      if (env.ASSETS && env.ASSETS.fetch) {
+        let resp = await env.ASSETS.fetch(request);
+        // El export estático usa carpetas con index.html (trailing slash).
+        // Si el path de directorio no resuelve, se reintenta con /index.html.
+        if (resp && resp.status === 404) {
+          const u = new URL(request.url);
+          const ultimo = u.pathname.split("/").pop() || "";
+          let nuevo = u.pathname;
+          if (nuevo.endsWith("/")) nuevo += "index.html";
+          else if (!ultimo.includes(".")) nuevo += "/index.html";
+          if (nuevo !== u.pathname) {
+            u.pathname = nuevo;
+            const r2 = await env.ASSETS.fetch(new Request(u.toString(), request));
+            if (r2 && r2.status !== 404) return r2;
+          }
+          // Última opción: la portada.
+          const home = new URL(request.url);
+          home.pathname = "/index.html";
+          const rh = await env.ASSETS.fetch(new Request(home.toString(), request));
+          if (rh && rh.status !== 404) return rh;
+        }
+        return resp;
+      }
       return new Response("No encontrado", { status: 404 });
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
