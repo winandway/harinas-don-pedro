@@ -210,6 +210,31 @@ export default {
       // --- API de datos ---
       if (path === "/datos/salud") return json({ ok: true });
 
+      if (path === "/datos/debug") {
+        const probar = async (p) => {
+          try {
+            const u = new URL(request.url); u.pathname = p;
+            const r = await env.ASSETS.fetch(new Request(u.toString(), request));
+            return r ? r.status : "sin-resp";
+          } catch (e) { return "err:" + (e && e.message); }
+        };
+        let bucketRoot = null;
+        try {
+          if (env.BUCKET) { const o = await env.BUCKET.get("index.html"); bucketRoot = o ? "hay" : "vacio"; }
+        } catch (e) { bucketRoot = "err:" + (e && e.message); }
+        return json({
+          bindings: Object.keys(env || {}),
+          assets: {
+            raiz: await probar("/"),
+            index: await probar("/index.html"),
+            admin: await probar("/admin/"),
+            adminIndex: await probar("/admin/index.html"),
+            icon: await probar("/icon.png"),
+          },
+          bucketIndex: bucketRoot,
+        });
+      }
+
       if (path === "/datos/login" && request.method === "POST") {
         const { usuario, clave } = await request.json();
         const u = await env.DB.prepare("SELECT * FROM usuarios WHERE lower(usuario)=lower(?)").bind((usuario || "").trim()).first();
