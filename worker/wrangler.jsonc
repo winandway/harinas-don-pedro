@@ -1,8 +1,8 @@
 {
-  // Config del worker para YaDominios Cloud.
-  // env.DB (SQLite) y env.BUCKET los inyecta YaDominios automáticamente.
+  // Config del worker para YaDominios Cloud (patrón framework: main + assets).
+  // env.DB (SQLite) y env.ASSETS los inyecta YaDominios automáticamente.
   "name": "harinadonpedro",
-  "main": "_worker.js",
+  "main": "server.js",
   "compatibility_date": "2026-07-01",
-  "assets": { "directory": "./assets", "binding": "ASSETS" }
+  "assets": { "directory": "./public" }
 }
