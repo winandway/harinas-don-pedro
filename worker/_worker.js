@@ -196,6 +196,43 @@ function base64ToBytes(b64) {
   return bytes;
 }
 
+// ---------- sitio estático servido desde R2 (env.BUCKET) ----------
+const TIPOS = {
+  html: "text/html; charset=utf-8", css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8", mjs: "text/javascript; charset=utf-8",
+  json: "application/json; charset=utf-8", webmanifest: "application/manifest+json",
+  txt: "text/plain; charset=utf-8", xml: "application/xml; charset=utf-8",
+  svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", ico: "image/x-icon", avif: "image/avif",
+  pdf: "application/pdf", woff2: "font/woff2", woff: "font/woff", ttf: "font/ttf",
+};
+function tipoPorExt(clave) {
+  const ext = (clave.split(".").pop() || "").toLowerCase();
+  return TIPOS[ext] || "application/octet-stream";
+}
+
+async function servirSitio(env, request) {
+  if (!env.BUCKET) return new Response("No encontrado", { status: 404 });
+  const url = new URL(request.url);
+  let clave = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+  if (clave === "" || clave.endsWith("/")) clave += "index.html";
+
+  let obj = await env.BUCKET.get(clave);
+  if (!obj && !clave.includes(".")) {
+    const alt = clave + "/index.html";
+    obj = await env.BUCKET.get(alt);
+    if (obj) clave = alt;
+  }
+  if (!obj) {
+    const e404 = await env.BUCKET.get("404.html");
+    if (e404) return new Response(e404.body, { status: 404, headers: { "content-type": "text/html; charset=utf-8" } });
+    return new Response("No encontrado", { status: 404 });
+  }
+  const ct = (obj.httpMetadata && obj.httpMetadata.contentType) || tipoPorExt(clave);
+  const cache = clave.startsWith("_next/") ? "public, max-age=31536000, immutable" : "public, max-age=3600";
+  return new Response(obj.body, { headers: { "content-type": ct, "cache-control": cache } });
+}
+
 // ---------- router ----------
 export default {
   async fetch(request, env) {
@@ -209,31 +246,6 @@ export default {
 
       // --- API de datos ---
       if (path === "/datos/salud") return json({ ok: true });
-
-      if (path === "/datos/debug") {
-        const probar = async (p) => {
-          try {
-            const u = new URL(request.url); u.pathname = p;
-            const r = await env.ASSETS.fetch(new Request(u.toString(), request));
-            return r ? r.status : "sin-resp";
-          } catch (e) { return "err:" + (e && e.message); }
-        };
-        let bucketRoot = null;
-        try {
-          if (env.BUCKET) { const o = await env.BUCKET.get("index.html"); bucketRoot = o ? "hay" : "vacio"; }
-        } catch (e) { bucketRoot = "err:" + (e && e.message); }
-        return json({
-          bindings: Object.keys(env || {}),
-          assets: {
-            raiz: await probar("/"),
-            index: await probar("/index.html"),
-            admin: await probar("/admin/"),
-            adminIndex: await probar("/admin/index.html"),
-            icon: await probar("/icon.png"),
-          },
-          bucketIndex: bucketRoot,
-        });
-      }
 
       if (path === "/datos/login" && request.method === "POST") {
         const { usuario, clave } = await request.json();
@@ -266,6 +278,8 @@ export default {
         path === "/datos/estado" ||
         path === "/datos/aplicar" ||
         path === "/datos/cambiar-clave" ||
+        path === "/datos/subir-sitio" ||
+        path === "/datos/vaciar-sitio" ||
         path === "/media/subir"
       ) {
         const s = await sesionActual(env, request);
@@ -300,6 +314,30 @@ export default {
           const ruta = await guardarCaptura(env, dataUrl);
           return json({ url: ruta });
         }
+
+        // --- publicar el sitio estático en R2 (solo superadmin) ---
+        if (path === "/datos/subir-sitio" && request.method === "POST") {
+          if (s.usuario.rol !== "superadmin") return json({ error: "No autorizado" }, 403);
+          if (!env.BUCKET) return json({ error: "R2 no disponible" }, 503);
+          const { ruta, b64, tipo } = await request.json();
+          if (!ruta || typeof b64 !== "string") return json({ error: "faltan datos" }, 400);
+          const bytes = base64ToBytes(b64);
+          await env.BUCKET.put(ruta.replace(/^\/+/, ""), bytes, {
+            httpMetadata: { contentType: tipo || tipoPorExt(ruta) },
+          });
+          return json({ ok: true, ruta });
+        }
+        if (path === "/datos/vaciar-sitio" && request.method === "POST") {
+          if (s.usuario.rol !== "superadmin") return json({ error: "No autorizado" }, 403);
+          if (!env.BUCKET) return json({ error: "R2 no disponible" }, 503);
+          let borrados = 0, cursor = undefined;
+          do {
+            const lista = await env.BUCKET.list({ cursor, limit: 1000 });
+            for (const o of lista.objects) { await env.BUCKET.delete(o.key); borrados++; }
+            cursor = lista.truncated ? lista.cursor : undefined;
+          } while (cursor);
+          return json({ ok: true, borrados });
+        }
       }
 
       // --- servir imagen de comprobante ---
@@ -316,31 +354,8 @@ export default {
 
       if (path.startsWith("/datos/")) return json({ error: "No encontrado" }, 404);
 
-      // --- resto: archivos estáticos (YaDominios inyecta env.ASSETS) ---
-      if (env.ASSETS && env.ASSETS.fetch) {
-        let resp = await env.ASSETS.fetch(request);
-        // El export estático usa carpetas con index.html (trailing slash).
-        // Si el path de directorio no resuelve, se reintenta con /index.html.
-        if (resp && resp.status === 404) {
-          const u = new URL(request.url);
-          const ultimo = u.pathname.split("/").pop() || "";
-          let nuevo = u.pathname;
-          if (nuevo.endsWith("/")) nuevo += "index.html";
-          else if (!ultimo.includes(".")) nuevo += "/index.html";
-          if (nuevo !== u.pathname) {
-            u.pathname = nuevo;
-            const r2 = await env.ASSETS.fetch(new Request(u.toString(), request));
-            if (r2 && r2.status !== 404) return r2;
-          }
-          // Última opción: la portada.
-          const home = new URL(request.url);
-          home.pathname = "/index.html";
-          const rh = await env.ASSETS.fetch(new Request(home.toString(), request));
-          if (rh && rh.status !== 404) return rh;
-        }
-        return resp;
-      }
-      return new Response("No encontrado", { status: 404 });
+      // --- resto: sitio estático servido desde R2 ---
+      return servirSitio(env, request);
     } catch (e) {
       return json({ error: String(e && e.message ? e.message : e) }, 500);
     }

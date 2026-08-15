@@ -36,11 +36,10 @@ jobs:
       - name: Compilar el sitio estático (genera out/)
         run: npm run build
 
-      - name: Ensamblar worker + sitio para YaDominios
+      - name: Ensamblar worker para YaDominios (los estáticos van en R2)
         run: |
           rm -rf publish
-          mkdir -p publish/public
-          cp -r out/. publish/public/
+          mkdir -p publish
           cp worker/_worker.js publish/_worker.js
 
       - name: Publicar en la rama yapanel-build
