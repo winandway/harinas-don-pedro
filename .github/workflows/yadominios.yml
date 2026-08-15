@@ -36,11 +36,14 @@ jobs:
       - name: Compilar el sitio estático (genera out/)
         run: npm run build
 
-      - name: Ensamblar worker para YaDominios (los estáticos van en R2)
+      - name: Ensamblar worker + portada para YaDominios (resto en R2)
         run: |
           rm -rf publish
           mkdir -p publish
           cp worker/_worker.js publish/_worker.js
+          # La portada va en la raíz del despliegue (YaDominios sirve "/");
+          # el resto del sitio lo sirve el worker desde R2.
+          cp out/index.html publish/index.html
 
       - name: Publicar en la rama yapanel-build
         uses: peaceiris/actions-gh-pages@v4
