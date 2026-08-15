@@ -35,7 +35,7 @@ import {
 } from "@/components/admin/icons";
 
 export default function PagosPage() {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [busqueda, setBusqueda] = useState("");
   const [filtroEstado, setFiltroEstado] = useState<EstadoPago | "todos">("todos");
   const [filtroMetodo, setFiltroMetodo] = useState<MetodoPago | "todos">("todos");
@@ -60,18 +60,27 @@ export default function PagosPage() {
 
   const porVerificar = db.pagos.filter((p) => p.estado === "por_verificar").length;
 
-  const cambiarEstado = (p: Pago, estado: EstadoPago) => {
-    mutar((d) => ({
-      ...d,
-      pagos: d.pagos.map((x) =>
-        x.id === p.id ? { ...x, estado, verificadoPor: sesion?.nombre } : x
-      ),
-    }));
+  const cambiarEstado = async (p: Pago, estado: EstadoPago) => {
+    try {
+      await aplicar([
+        {
+          accion: "upsert",
+          tabla: "pagos",
+          fila: { id: p.id, estado, verificadoPor: sesion?.nombre },
+        },
+      ]);
+    } catch {
+      alert("No se pudo actualizar el estado del pago. Intenta de nuevo.");
+    }
   };
 
-  const borrar = (p: Pago) => {
-    mutar((d) => ({ ...d, pagos: d.pagos.filter((x) => x.id !== p.id) }));
-    setBorrando(null);
+  const borrar = async (p: Pago) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "pagos", id: p.id }]);
+      setBorrando(null);
+    } catch {
+      alert("No se pudo eliminar el pago. Intenta de nuevo.");
+    }
   };
 
   const exportar = () =>

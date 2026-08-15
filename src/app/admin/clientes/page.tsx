@@ -45,7 +45,7 @@ const VACIO: Omit<Cliente, "id" | "creadoEl"> = {
 };
 
 export default function ClientesPage() {
-  const { db, mutar } = useAdmin();
+  const { db, aplicar } = useAdmin();
   const [busqueda, setBusqueda] = useState("");
   const [filtroTipo, setFiltroTipo] = useState<TipoCliente | "todos">("todos");
   const [editando, setEditando] = useState<Cliente | "nuevo" | null>(null);
@@ -72,9 +72,13 @@ export default function ClientesPage() {
     return { pedidos: pedidos.length, total };
   };
 
-  const borrar = (c: Cliente) => {
-    mutar((d) => ({ ...d, clientes: d.clientes.filter((x) => x.id !== c.id) }));
-    setBorrando(null);
+  const borrar = async (c: Cliente) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "clientes", id: c.id }]);
+      setBorrando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo eliminar.");
+    }
   };
 
   return (
@@ -217,31 +221,36 @@ export default function ClientesPage() {
 }
 
 function ClienteForm({ cliente, onClose }: { cliente: Cliente | null; onClose: () => void }) {
-  const { db, mutar } = useAdmin();
+  const { db, aplicar } = useAdmin();
   const [f, setF] = useState<Omit<Cliente, "id" | "creadoEl">>(
     cliente ? { ...cliente } : { ...VACIO }
   );
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const set = (k: keyof typeof f, v: string | boolean) => setF((prev) => ({ ...prev, [k]: v }));
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!f.nombre.trim()) return setError("El nombre del cliente es obligatorio.");
     const dup = db.clientes.find(
       (c) => c.nombre.trim().toLowerCase() === f.nombre.trim().toLowerCase() && c.id !== cliente?.id
     );
     if (dup) return setError("Ya existe un cliente con ese nombre.");
 
-    if (cliente) {
-      mutar((d) => ({
-        ...d,
-        clientes: d.clientes.map((c) => (c.id === cliente.id ? { ...c, ...f } : c)),
-      }));
-    } else {
-      const nuevo: Cliente = { ...f, id: uid(), creadoEl: hoyIso() };
-      mutar((d) => ({ ...d, clientes: [nuevo, ...d.clientes] }));
+    const fila: Cliente = cliente
+      ? { ...cliente, ...f }
+      : { ...f, id: uid(), creadoEl: hoyIso() };
+    setGuardando(true);
+    try {
+      await aplicar([
+        { accion: "upsert", tabla: "clientes", fila: fila as unknown as Record<string, unknown> },
+      ]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      setGuardando(false);
     }
-    onClose();
   };
 
   return (
@@ -342,8 +351,8 @@ function ClienteForm({ cliente, onClose }: { cliente: Cliente | null; onClose: (
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          {cliente ? "Guardar cambios" : "Crear cliente"}
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : cliente ? "Guardar cambios" : "Crear cliente"}
         </button>
       </div>
     </Modal>

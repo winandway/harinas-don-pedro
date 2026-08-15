@@ -4,10 +4,10 @@
 // Cubre los métodos de cobro venezolanos con captura de comprobante.
 
 import { useMemo, useState } from "react";
-import type { MetodoPago, Pago } from "@/lib/admin/types";
+import type { MetodoPago } from "@/lib/admin/types";
 import { METODOS, ORDEN_METODOS } from "@/lib/admin/catalogos";
 import { useAdmin, totalPedido, saldoPedido, tasaActual } from "@/lib/admin/store";
-import { fmtUsd, hoyIso, numeroDoc, uid } from "@/lib/admin/format";
+import { fmtUsd, hoyIso, uid } from "@/lib/admin/format";
 import { Modal, Field, inputCls, selectCls, btnPrimario, btnSuave } from "./ui";
 import ImageUpload from "./ImageUpload";
 
@@ -18,7 +18,7 @@ export default function PagoForm({
   pedidoId?: string;
   onClose: () => void;
 }) {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, subirCaptura, sesion } = useAdmin();
   const tasa = tasaActual(db);
   const pedido = pedidoId ? db.pedidos.find((p) => p.id === pedidoId) : undefined;
 
@@ -39,6 +39,7 @@ export default function PagoForm({
   const [clienteId, setClienteId] = useState(pedido?.clienteId ?? "");
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const def = METODOS[metodo];
   const esBs = def.moneda === "VES";
@@ -48,36 +49,43 @@ export default function PagoForm({
 
   const saldo = pedido ? saldoPedido(pedido, db.pagos) : null;
 
-  const guardar = () => {
+  const guardar = async () => {
     if (montoNum <= 0) return setError("Indica el monto recibido.");
     if (esBs && tasaNum <= 0) return setError("Indica la tasa en Bs para calcular el equivalente.");
-    const cliente = db.clientes.find((c) => c.id === clienteId);
-    const nuevo: Pago = {
-      id: uid(),
-      numero: numeroDoc("PAG", db.contadores.pago + 1),
-      fecha: hoyIso(),
-      clienteId: clienteId || pedido?.clienteId,
-      clienteNombre: cliente?.nombre ?? pedido?.clienteNombre,
-      pedidoId: pedido?.id,
-      metodo,
-      moneda: def.moneda,
-      monto: montoNum,
-      tasaBs: esBs ? tasaNum : undefined,
-      equivalenteUsd: Math.round(equivalente * 100) / 100,
-      referencia: referencia.trim() || undefined,
-      telefono: telefono.trim() || undefined,
-      banco: banco.trim() || undefined,
-      captura,
-      estado: "por_verificar",
-      notas: notas.trim() || undefined,
-      registradoPor: sesion?.nombre ?? "—",
-    };
-    mutar((d) => ({
-      ...d,
-      pagos: [nuevo, ...d.pagos],
-      contadores: { ...d.contadores, pago: d.contadores.pago + 1 },
-    }));
-    onClose();
+    setGuardando(true);
+    try {
+      // Si hay comprobante nuevo (dataURL), se sube y se guarda solo su URL.
+      let capturaUrl: string | null = captura ?? null;
+      if (captura && captura.startsWith("data:")) capturaUrl = await subirCaptura(captura);
+
+      const cliente = db.clientes.find((c) => c.id === clienteId);
+      // El número (PAG-####) lo asigna el servidor.
+      const fila = {
+        id: uid(),
+        fecha: hoyIso(),
+        clienteId: clienteId || pedido?.clienteId || null,
+        clienteNombre: cliente?.nombre ?? pedido?.clienteNombre ?? null,
+        pedidoId: pedido?.id ?? null,
+        metodo,
+        moneda: def.moneda,
+        monto: montoNum,
+        tasaBs: esBs ? tasaNum : null,
+        equivalenteUsd: Math.round(equivalente * 100) / 100,
+        referencia: referencia.trim() || null,
+        telefono: telefono.trim() || null,
+        banco: banco.trim() || null,
+        captura: capturaUrl,
+        estado: "por_verificar",
+        notas: notas.trim() || null,
+        registradoPor: sesion?.nombre ?? "—",
+      };
+      await aplicar([{ accion: "upsert", tabla: "pagos", fila }]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar el pago.");
+    } finally {
+      setGuardando(false);
+    }
   };
 
   return (
@@ -227,8 +235,8 @@ export default function PagoForm({
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          Guardar pago
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : "Guardar pago"}
         </button>
       </div>
       <p className="mt-3 text-[11px] text-gris">

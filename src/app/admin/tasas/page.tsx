@@ -22,7 +22,7 @@ import { IcoPlus, IcoBasura, IcoCalculadora } from "@/components/admin/icons";
 import type { TasaRegistro } from "@/lib/admin/types";
 
 export default function TasasPage() {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [registrando, setRegistrando] = useState(false);
   const [borrando, setBorrando] = useState<TasaRegistro | null>(null);
   const actual = tasaActual(db);
@@ -39,9 +39,13 @@ export default function TasasPage() {
         : montoNum / tasaCalc
       : 0;
 
-  const borrar = (t: TasaRegistro) => {
-    mutar((d) => ({ ...d, tasas: d.tasas.filter((x) => x.id !== t.id) }));
-    setBorrando(null);
+  const borrar = async (t: TasaRegistro) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "tasas", id: t.id }]);
+      setBorrando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo eliminar.");
+    }
   };
 
   return (
@@ -192,13 +196,14 @@ export default function TasasPage() {
 }
 
 function TasaForm({ onClose, usuario }: { onClose: () => void; usuario: string }) {
-  const { mutar } = useAdmin();
+  const { aplicar } = useAdmin();
   const [bcv, setBcv] = useState("");
   const [paralelo, setParalelo] = useState("");
   const [usdt, setUsdt] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
-  const guardar = () => {
+  const guardar = async () => {
     const b = parseFloat(bcv.replace(",", ".")) || 0;
     if (b <= 0) return setError("La tasa BCV es obligatoria.");
     const nueva: TasaRegistro = {
@@ -209,8 +214,15 @@ function TasaForm({ onClose, usuario }: { onClose: () => void; usuario: string }
       usdt: parseFloat(usdt.replace(",", ".")) || undefined,
       registradoPor: usuario,
     };
-    mutar((d) => ({ ...d, tasas: [nueva, ...d.tasas] }));
-    onClose();
+    setGuardando(true);
+    try {
+      await aplicar([{ accion: "upsert", tabla: "tasas", fila: { ...nueva } }]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      setGuardando(false);
+    }
   };
 
   return (
@@ -249,8 +261,8 @@ function TasaForm({ onClose, usuario }: { onClose: () => void; usuario: string }
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          Guardar tasa
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : "Guardar tasa"}
         </button>
       </div>
     </Modal>

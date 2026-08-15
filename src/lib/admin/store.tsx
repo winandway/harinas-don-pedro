@@ -1,122 +1,168 @@
 "use client";
 
-// Store del panel: estado en memoria + persistencia en localStorage.
-// Cuando se conecte Supabase, esta capa se reemplaza sin tocar las vistas.
+// Store del panel: estado en memoria respaldado por la base de datos del sitio
+// a través de la API del worker (/datos/*). El login es server-side por sesión.
 
 import {
   createContext,
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import type { DB, Pago, Pedido, Sesion } from "./types";
-import { dbInicial } from "./defaults";
-import { verificarClave } from "./auth";
 
-const KEY_DB = "hdp-admin-db-v1";
-const KEY_SESION = "hdp-admin-sesion-v1";
+export type Op =
+  | { accion: "upsert"; tabla: string; fila: Record<string, unknown> }
+  | { accion: "delete"; tabla: string; id: string }
+  | { accion: "config"; clave: string; valor: unknown };
 
 interface StoreCtx {
   db: DB;
   ready: boolean;
   sesion: Sesion | null;
   login: (usuario: string, clave: string) => Promise<string | null>;
-  logout: () => void;
-  // Mutador central: recibe el estado actual y devuelve el nuevo.
-  mutar: (fn: (db: DB) => DB) => void;
-  reemplazarDb: (db: DB) => void;
+  logout: () => Promise<void>;
+  // Aplica una o varias mutaciones en la base y refresca el estado.
+  aplicar: (ops: Op[]) => Promise<void>;
+  recargar: () => Promise<void>;
+  // Sube una imagen de comprobante y devuelve su URL (/media/...).
+  subirCaptura: (dataUrl: string) => Promise<string>;
+  // Cambia la clave del usuario actual (verificada en el servidor). Devuelve
+  // un mensaje de error o null si salió bien.
+  cambiarClave: (actual: string, nueva: string) => Promise<string | null>;
 }
 
 const Ctx = createContext<StoreCtx | null>(null);
 
-function cargarDb(): DB {
-  try {
-    const raw = localStorage.getItem(KEY_DB);
-    if (!raw) return dbInicial();
-    const data = JSON.parse(raw) as DB;
-    if (!data || typeof data !== "object" || !Array.isArray(data.usuarios)) {
-      return dbInicial();
-    }
-    // Fusiona con el inicial por si se agregan campos en versiones nuevas.
-    return { ...dbInicial(), ...data, config: { ...dbInicial().config, ...data.config } };
-  } catch {
-    return dbInicial();
-  }
+function dbVacia(): DB {
+  return {
+    version: 1,
+    usuarios: [],
+    clientes: [],
+    productos: [],
+    movimientos: [],
+    pedidos: [],
+    pagos: [],
+    tasas: [],
+    config: { metodos: {} as DB["config"]["metodos"], notaCobro: "", claveInicial: false },
+    contadores: { pedido: 0, pago: 0 },
+  };
 }
 
-function cargarSesion(): Sesion | null {
-  try {
-    const raw = localStorage.getItem(KEY_SESION);
-    return raw ? (JSON.parse(raw) as Sesion) : null;
-  } catch {
-    return null;
-  }
+async function api(path: string, opciones?: RequestInit) {
+  const r = await fetch(path, {
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    ...opciones,
+  });
+  return r;
 }
 
 export function AdminStoreProvider({ children }: { children: React.ReactNode }) {
-  const [db, setDb] = useState<DB>(dbInicial);
+  const [db, setDb] = useState<DB>(dbVacia);
   const [sesion, setSesion] = useState<Sesion | null>(null);
   const [ready, setReady] = useState(false);
-  const primeraCarga = useRef(true);
 
-  useEffect(() => {
-    setDb(cargarDb());
-    setSesion(cargarSesion());
-    setReady(true);
+  const aplicarSnapshot = useCallback((data: Record<string, unknown>) => {
+    setDb({ ...(data as unknown as DB), version: 1 });
+    if (data.sesion) setSesion(data.sesion as Sesion);
   }, []);
 
-  useEffect(() => {
-    if (!ready) return;
-    if (primeraCarga.current) {
-      primeraCarga.current = false;
+  const recargar = useCallback(async () => {
+    const r = await api("/datos/estado");
+    if (r.status === 401) {
+      setSesion(null);
       return;
     }
-    try {
-      localStorage.setItem(KEY_DB, JSON.stringify(db));
-    } catch {
-      // localStorage lleno (capturas muy pesadas): se ignora para no romper la UI.
+    if (r.ok) {
+      const data = await r.json();
+      aplicarSnapshot(data);
     }
-  }, [db, ready]);
+  }, [aplicarSnapshot]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await recargar();
+      } finally {
+        setReady(true);
+      }
+    })();
+  }, [recargar]);
 
   const login = useCallback(
     async (usuario: string, clave: string): Promise<string | null> => {
-      const u = db.usuarios.find(
-        (x) => x.usuario.toLowerCase() === usuario.trim().toLowerCase()
-      );
-      if (!u || !(await verificarClave(clave, u.clave)))
-        return "Usuario o clave incorrectos.";
-      if (!u.activo) return "Este usuario está desactivado.";
-      const s: Sesion = { usuarioId: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol };
-      setSesion(s);
-      localStorage.setItem(KEY_SESION, JSON.stringify(s));
-      setDb((prev) => ({
-        ...prev,
-        usuarios: prev.usuarios.map((x) =>
-          x.id === u.id ? { ...x, ultimoAcceso: new Date().toISOString() } : x
-        ),
-      }));
+      const r = await api("/datos/login", {
+        method: "POST",
+        body: JSON.stringify({ usuario, clave }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        return data.error || "No se pudo iniciar sesión.";
+      }
+      const data = await r.json();
+      setSesion(data.sesion as Sesion);
+      await recargar();
       return null;
     },
-    [db.usuarios]
+    [recargar]
   );
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await api("/datos/logout", { method: "POST" }).catch(() => {});
     setSesion(null);
-    localStorage.removeItem(KEY_SESION);
+    setDb(dbVacia());
+    window.location.reload();
   }, []);
 
-  const mutar = useCallback((fn: (db: DB) => DB) => {
-    setDb((prev) => fn(prev));
+  const aplicar = useCallback(async (ops: Op[]) => {
+    const r = await api("/datos/aplicar", {
+      method: "POST",
+      body: JSON.stringify({ ops }),
+    });
+    if (r.status === 401) {
+      setSesion(null);
+      throw new Error("Tu sesión expiró. Entra de nuevo.");
+    }
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.error || "No se pudo guardar el cambio.");
+    }
+    const data = await r.json();
+    aplicarSnapshot(data);
+  }, [aplicarSnapshot]);
+
+  const subirCaptura = useCallback(async (dataUrl: string): Promise<string> => {
+    const r = await api("/media/subir", {
+      method: "POST",
+      body: JSON.stringify({ dataUrl }),
+    });
+    if (!r.ok) throw new Error("No se pudo subir la imagen.");
+    const data = await r.json();
+    return data.url as string;
   }, []);
 
-  const reemplazarDb = useCallback((nuevo: DB) => {
-    setDb(nuevo);
-  }, []);
+  const cambiarClave = useCallback(
+    async (actual: string, nueva: string): Promise<string | null> => {
+      const r = await api("/datos/cambiar-clave", {
+        method: "POST",
+        body: JSON.stringify({ claveActual: actual, claveNueva: nueva }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        return data.error || "No se pudo cambiar la clave.";
+      }
+      await recargar();
+      return null;
+    },
+    [recargar]
+  );
 
   return (
-    <Ctx.Provider value={{ db, ready, sesion, login, logout, mutar, reemplazarDb }}>
+    <Ctx.Provider
+      value={{ db, ready, sesion, login, logout, aplicar, recargar, subirCaptura, cambiarClave }}
+    >
       {children}
     </Ctx.Provider>
   );

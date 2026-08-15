@@ -5,8 +5,7 @@
 import { useState } from "react";
 import type { Rol, Usuario } from "@/lib/admin/types";
 import { ROLES } from "@/lib/admin/catalogos";
-import { useAdmin } from "@/lib/admin/store";
-import { hashClave } from "@/lib/admin/auth";
+import { useAdmin, type Op } from "@/lib/admin/store";
 import { fmtFechaHora, hoyIso, uid } from "@/lib/admin/format";
 import {
   Card,
@@ -25,15 +24,19 @@ import {
 import { IcoPlus, IcoEditar, IcoBasura, IcoCandado } from "@/components/admin/icons";
 
 export default function UsuariosPage() {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [editando, setEditando] = useState<Usuario | "nuevo" | null>(null);
   const [borrando, setBorrando] = useState<Usuario | null>(null);
 
   const superadmins = db.usuarios.filter((u) => u.rol === "superadmin" && u.activo);
 
-  const borrar = (u: Usuario) => {
-    mutar((d) => ({ ...d, usuarios: d.usuarios.filter((x) => x.id !== u.id) }));
-    setBorrando(null);
+  const borrar = async (u: Usuario) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "usuarios", id: u.id }]);
+      setBorrando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo eliminar.");
+    }
   };
 
   return (
@@ -132,7 +135,7 @@ export default function UsuariosPage() {
 }
 
 function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: () => void }) {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [nombre, setNombre] = useState(usuario?.nombre ?? "");
   const [user, setUser] = useState(usuario?.usuario ?? "");
   const [clave, setClave] = useState("");
@@ -140,6 +143,7 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
   const [telefono, setTelefono] = useState(usuario?.telefono ?? "");
   const [activo, setActivo] = useState(usuario?.activo ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const esYo = usuario?.id === sesion?.usuarioId;
 
@@ -162,43 +166,48 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
       return setError("No puedes quitar el último superadmin activo del panel.");
     }
 
-    // La clave se guarda cifrada (hash), nunca en texto plano.
-    const claveHash = clave ? await hashClave(clave) : undefined;
-
-    if (usuario) {
-      mutar((d) => ({
-        ...d,
-        usuarios: d.usuarios.map((x) =>
-          x.id === usuario.id
-            ? {
-                ...x,
-                nombre: nombre.trim(),
-                usuario: u,
-                rol,
-                telefono: telefono.trim() || undefined,
-                activo,
-                clave: claveHash ?? x.clave,
-              }
-            : x
-        ),
+    // La clave viaja en texto plano bajo `clave_plana`; el servidor la cifra.
+    setGuardando(true);
+    try {
+      const ops: Op[] = [];
+      if (usuario) {
+        const fila: Record<string, unknown> = {
+          id: usuario.id,
+          nombre: nombre.trim(),
+          usuario: u,
+          rol,
+          telefono: telefono.trim() || undefined,
+          activo,
+          creadoEl: usuario.creadoEl,
+        };
+        if (usuario.ultimoAcceso) fila.ultimoAcceso = usuario.ultimoAcceso;
+        // Solo se envía la clave cuando el usuario escribió una nueva.
+        if (clave) fila.clave_plana = clave;
+        ops.push({ accion: "upsert", tabla: "usuarios", fila });
         // Si cambió su propia clave y era la inicial, se marca como cambiada.
-        config:
-          esYo && clave ? { ...d.config, claveInicial: false } : d.config,
-      }));
-    } else {
-      const nuevo: Usuario = {
-        id: uid(),
-        nombre: nombre.trim(),
-        usuario: u,
-        clave: claveHash ?? "",
-        rol,
-        telefono: telefono.trim() || undefined,
-        activo,
-        creadoEl: hoyIso(),
-      };
-      mutar((d) => ({ ...d, usuarios: [...d.usuarios, nuevo] }));
+        if (esYo && clave) {
+          ops.push({ accion: "config", clave: "claveInicial", valor: "0" });
+        }
+      } else {
+        const fila: Record<string, unknown> = {
+          id: uid(),
+          nombre: nombre.trim(),
+          usuario: u,
+          rol,
+          telefono: telefono.trim() || undefined,
+          activo: true,
+          creadoEl: hoyIso(),
+          clave_plana: clave,
+        };
+        ops.push({ accion: "upsert", tabla: "usuarios", fila });
+      }
+      await aplicar(ops);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      setGuardando(false);
     }
-    onClose();
   };
 
   return (
@@ -270,8 +279,8 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          {usuario ? "Guardar cambios" : "Crear usuario"}
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : usuario ? "Guardar cambios" : "Crear usuario"}
         </button>
       </div>
     </Modal>

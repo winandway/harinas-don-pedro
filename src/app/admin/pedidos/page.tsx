@@ -10,6 +10,7 @@ import {
   totalPedido,
   abonadoPedido,
   saldoPedido,
+  type Op,
 } from "@/lib/admin/store";
 import { fmtUsd, fmtFecha, hoyIso, hoyFecha, numeroDoc, uid } from "@/lib/admin/format";
 import {
@@ -42,7 +43,7 @@ import {
 type FiltroEstado = EstadoPedido | "todos" | "activos";
 
 export default function PedidosPage() {
-  const { db, mutar } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [filtro, setFiltro] = useState<FiltroEstado>("activos");
   const [busqueda, setBusqueda] = useState("");
   const [editando, setEditando] = useState<Pedido | "nuevo" | null>(null);
@@ -80,7 +81,7 @@ export default function PedidosPage() {
       );
   }, [db.pedidos, filtro, busqueda]);
 
-  const avanzarEstado = (p: Pedido) => {
+  const avanzarEstado = async (p: Pedido) => {
     const idx = FLUJO_PEDIDO.indexOf(p.estado);
     if (idx < 0 || idx >= FLUJO_PEDIDO.length - 1) return;
     const siguiente = FLUJO_PEDIDO[idx + 1];
@@ -88,62 +89,70 @@ export default function PedidosPage() {
       setEntregando(p);
       return;
     }
-    mutar((d) => ({
-      ...d,
-      pedidos: d.pedidos.map((x) => (x.id === p.id ? { ...x, estado: siguiente } : x)),
-    }));
+    try {
+      await aplicar([{ accion: "upsert", tabla: "pedidos", fila: { id: p.id, estado: siguiente } }]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo actualizar el pedido.");
+    }
   };
 
-  const entregar = (p: Pedido, descontar: boolean) => {
-    mutar((d) => {
-      let productos = d.productos;
-      let movimientos = d.movimientos;
-      if (descontar && !p.descontadoInventario) {
-        productos = d.productos.map((prod) => {
-          const it = p.items.find((i) => i.productoId === prod.id);
-          return it ? { ...prod, stock: Math.max(0, prod.stock - it.cantidad) } : prod;
+  const entregar = async (p: Pedido, descontar: boolean) => {
+    const ops: Op[] = [];
+    if (descontar && !p.descontadoInventario) {
+      for (const it of p.items) {
+        if (!it.productoId) continue;
+        const prod = db.productos.find((x) => x.id === it.productoId);
+        if (!prod) continue;
+        ops.push({
+          accion: "upsert",
+          tabla: "productos",
+          fila: { id: prod.id, stock: Math.max(0, prod.stock - it.cantidad) },
         });
-        movimientos = [
-          ...p.items
-            .filter((i) => i.productoId)
-            .map((i) => ({
-              id: uid(),
-              productoId: i.productoId!,
-              productoNombre: i.descripcion,
-              tipo: "salida" as const,
-              cantidad: i.cantidad,
-              motivo: `Entrega del pedido ${p.numero}`,
-              fecha: hoyIso(),
-              usuario: "—",
-            })),
-          ...d.movimientos,
-        ];
+        ops.push({
+          accion: "upsert",
+          tabla: "movimientos",
+          fila: {
+            id: uid(),
+            productoId: it.productoId,
+            productoNombre: it.descripcion,
+            tipo: "salida",
+            cantidad: it.cantidad,
+            motivo: `Entrega del pedido ${p.numero}`,
+            fecha: hoyIso(),
+            usuario: sesion?.nombre ?? "—",
+          },
+        });
       }
-      return {
-        ...d,
-        productos,
-        movimientos,
-        pedidos: d.pedidos.map((x) =>
-          x.id === p.id
-            ? { ...x, estado: "entregado" as const, descontadoInventario: descontar || x.descontadoInventario }
-            : x
-        ),
-      };
+    }
+    ops.push({
+      accion: "upsert",
+      tabla: "pedidos",
+      fila: { id: p.id, estado: "entregado", descontadoInventario: descontar || p.descontadoInventario },
     });
-    setEntregando(null);
+    try {
+      await aplicar(ops);
+      setEntregando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo entregar el pedido.");
+    }
   };
 
-  const cancelar = (p: Pedido) => {
-    mutar((d) => ({
-      ...d,
-      pedidos: d.pedidos.map((x) => (x.id === p.id ? { ...x, estado: "cancelado" as const } : x)),
-    }));
-    setCancelando(null);
+  const cancelar = async (p: Pedido) => {
+    try {
+      await aplicar([{ accion: "upsert", tabla: "pedidos", fila: { id: p.id, estado: "cancelado" } }]);
+      setCancelando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo cancelar el pedido.");
+    }
   };
 
-  const borrar = (p: Pedido) => {
-    mutar((d) => ({ ...d, pedidos: d.pedidos.filter((x) => x.id !== p.id) }));
-    setBorrando(null);
+  const borrar = async (p: Pedido) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "pedidos", id: p.id }]);
+      setBorrando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo eliminar el pedido.");
+    }
   };
 
   const FILTROS: Array<{ id: FiltroEstado; label: string }> = [
@@ -492,7 +501,7 @@ function PedidoDetalle({
 // ---------- Formulario ----------
 
 function PedidoForm({ pedido, onClose }: { pedido: Pedido | null; onClose: () => void }) {
-  const { db, mutar, sesion } = useAdmin();
+  const { db, aplicar, sesion } = useAdmin();
   const [clienteId, setClienteId] = useState(pedido?.clienteId ?? "");
   const [clienteNombre, setClienteNombre] = useState(pedido?.clienteNombre ?? "");
   const [canal, setCanal] = useState<CanalPedido>(pedido?.canal ?? "whatsapp");
@@ -503,6 +512,7 @@ function PedidoForm({ pedido, onClose }: { pedido: Pedido | null; onClose: () =>
     pedido?.items.length ? [...pedido.items] : [{ descripcion: "", cantidad: 1, precioUsd: 0 }]
   );
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const productosActivos = db.productos.filter((p) => p.activo);
   const total = items.reduce((a, it) => a + it.cantidad * it.precioUsd, 0);
@@ -519,52 +529,51 @@ function PedidoForm({ pedido, onClose }: { pedido: Pedido | null; onClose: () =>
     });
   };
 
-  const guardar = () => {
+  const guardar = async () => {
     const cliente = db.clientes.find((c) => c.id === clienteId);
     const nombreFinal = cliente?.nombre ?? clienteNombre.trim();
     if (!nombreFinal) return setError("Selecciona un cliente o escribe su nombre.");
     const itemsValidos = items.filter((it) => it.descripcion.trim() && it.cantidad > 0);
     if (!itemsValidos.length) return setError("Agrega al menos un producto con cantidad.");
 
-    if (pedido) {
-      mutar((d) => ({
-        ...d,
-        pedidos: d.pedidos.map((p) =>
-          p.id === pedido.id
-            ? {
-                ...p,
-                clienteId: clienteId || undefined,
-                clienteNombre: nombreFinal,
-                canal,
-                estado,
-                fechaEntrega: fechaEntrega || undefined,
-                notas: notas.trim() || undefined,
-                items: itemsValidos,
-              }
-            : p
-        ),
-      }));
-    } else {
-      const nuevo: Pedido = {
-        id: uid(),
-        numero: numeroDoc("PED", db.contadores.pedido + 1),
-        clienteId: clienteId || undefined,
-        clienteNombre: nombreFinal,
-        items: itemsValidos,
-        estado,
-        canal,
-        fecha: hoyIso(),
-        fechaEntrega: fechaEntrega || undefined,
-        notas: notas.trim() || undefined,
-        creadoPor: sesion?.nombre ?? "—",
-      };
-      mutar((d) => ({
-        ...d,
-        pedidos: [nuevo, ...d.pedidos],
-        contadores: { ...d.contadores, pedido: d.contadores.pedido + 1 },
-      }));
+    // numero (PED-####) lo asigna el servidor en pedidos nuevos.
+    const fila = pedido
+      ? {
+          id: pedido.id,
+          numero: pedido.numero,
+          clienteId: clienteId || null,
+          clienteNombre: nombreFinal,
+          canal,
+          estado,
+          fecha: pedido.fecha,
+          fechaEntrega: fechaEntrega || null,
+          notas: notas.trim() || null,
+          items: itemsValidos,
+          creadoPor: pedido.creadoPor,
+          descontadoInventario: pedido.descontadoInventario ?? false,
+        }
+      : {
+          id: uid(),
+          clienteId: clienteId || null,
+          clienteNombre: nombreFinal,
+          items: itemsValidos,
+          estado,
+          canal,
+          fecha: hoyIso(),
+          fechaEntrega: fechaEntrega || null,
+          notas: notas.trim() || null,
+          creadoPor: sesion?.nombre ?? "—",
+          descontadoInventario: false,
+        };
+    setGuardando(true);
+    try {
+      await aplicar([{ accion: "upsert", tabla: "pedidos", fila }]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar el pedido.");
+    } finally {
+      setGuardando(false);
     }
-    onClose();
   };
 
   return (
@@ -709,8 +718,8 @@ function PedidoForm({ pedido, onClose }: { pedido: Pedido | null; onClose: () =>
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          {pedido ? "Guardar cambios" : "Crear pedido"}
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : pedido ? "Guardar cambios" : "Crear pedido"}
         </button>
       </div>
     </Modal>

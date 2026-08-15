@@ -2,26 +2,23 @@
 
 // Configuración: métodos de cobro del negocio, clave de acceso y respaldos.
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { DB, MetodoPago } from "@/lib/admin/types";
 import { METODOS, ORDEN_METODOS } from "@/lib/admin/catalogos";
 import { useAdmin } from "@/lib/admin/store";
-import { hashClave, verificarClave } from "@/lib/admin/auth";
 import { descargarJson } from "@/lib/admin/format";
 import { empresa } from "@/lib/site";
 import {
   Card,
   PageHeader,
-  Confirmar,
   Field,
   inputCls,
   btnPrimario,
-  btnSecundario,
 } from "@/components/admin/ui";
-import { IcoCandado, IcoRespaldo, IcoDescargar, IcoSubir, IcoCheck } from "@/components/admin/icons";
+import { IcoCandado, IcoRespaldo, IcoDescargar, IcoCheck } from "@/components/admin/icons";
 
 export default function ConfiguracionPage() {
-  const { db, mutar, sesion, reemplazarDb } = useAdmin();
+  const { db, aplicar, cambiarClave } = useAdmin();
   const [guardado, setGuardado] = useState(false);
 
   // --- Métodos de pago ---
@@ -42,10 +39,21 @@ export default function ConfiguracionPage() {
       [m]: { ...prev[m], campos: { ...prev[m].campos, [key]: valor } },
     }));
 
-  const guardarMetodos = () => {
-    mutar((d) => ({ ...d, config: { ...d.config, metodos, notaCobro } }));
-    setGuardado(true);
-    setTimeout(() => setGuardado(false), 2000);
+  const [guardandoMetodos, setGuardandoMetodos] = useState(false);
+  const guardarMetodos = async () => {
+    setGuardandoMetodos(true);
+    try {
+      await aplicar([
+        { accion: "config", clave: "metodos", valor: JSON.stringify(metodos) },
+        { accion: "config", clave: "notaCobro", valor: notaCobro },
+      ]);
+      setGuardado(true);
+      setTimeout(() => setGuardado(false), 2000);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudieron guardar los métodos.");
+    } finally {
+      setGuardandoMetodos(false);
+    }
   };
 
   // --- Clave ---
@@ -54,52 +62,29 @@ export default function ConfiguracionPage() {
   const [claveRepite, setClaveRepite] = useState("");
   const [msgClave, setMsgClave] = useState<{ ok: boolean; texto: string } | null>(null);
 
-  const cambiarClave = async () => {
-    const yo = db.usuarios.find((u) => u.id === sesion?.usuarioId);
-    if (!yo) return;
-    if (!(await verificarClave(claveActual, yo.clave)))
-      return setMsgClave({ ok: false, texto: "La clave actual no es correcta." });
+  const [cambiandoClave, setCambiandoClave] = useState(false);
+  const cambiar = async () => {
     if (claveNueva.length < 6)
       return setMsgClave({ ok: false, texto: "La clave nueva debe tener al menos 6 caracteres." });
     if (claveNueva !== claveRepite)
       return setMsgClave({ ok: false, texto: "Las claves nuevas no coinciden." });
-    const hash = await hashClave(claveNueva);
-    mutar((d) => ({
-      ...d,
-      usuarios: d.usuarios.map((u) => (u.id === yo.id ? { ...u, clave: hash } : u)),
-      config: { ...d.config, claveInicial: false },
-    }));
-    setClaveActual("");
-    setClaveNueva("");
-    setClaveRepite("");
-    setMsgClave({ ok: true, texto: "Clave actualizada correctamente." });
+    setCambiandoClave(true);
+    try {
+      const err = await cambiarClave(claveActual, claveNueva);
+      if (err) return setMsgClave({ ok: false, texto: err });
+      setClaveActual("");
+      setClaveNueva("");
+      setClaveRepite("");
+      setMsgClave({ ok: true, texto: "Clave actualizada correctamente." });
+    } finally {
+      setCambiandoClave(false);
+    }
   };
 
-  // --- Respaldos ---
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [importando, setImportando] = useState<DB | null>(null);
-  const [errorImport, setErrorImport] = useState<string | null>(null);
-
+  // --- Respaldo (exportar) ---
   const exportar = () => {
     const fecha = new Date().toISOString().slice(0, 10);
     descargarJson(`respaldo-don-pedro-${fecha}`, db);
-  };
-
-  const leerRespaldo = async (f: File | undefined) => {
-    setErrorImport(null);
-    if (!f) return;
-    try {
-      const texto = await f.text();
-      const data = JSON.parse(texto) as DB;
-      if (!data || !Array.isArray(data.usuarios) || !data.config) {
-        throw new Error("estructura");
-      }
-      setImportando(data);
-    } catch {
-      setErrorImport("Ese archivo no parece un respaldo válido del panel.");
-    } finally {
-      if (fileRef.current) fileRef.current.value = "";
-    }
   };
 
   return (
@@ -134,9 +119,9 @@ export default function ConfiguracionPage() {
       <Card className="p-5 mb-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
           <h2 className="font-display font-bold text-negro">Métodos de cobro</h2>
-          <button className={btnPrimario} onClick={guardarMetodos}>
+          <button className={btnPrimario} onClick={guardarMetodos} disabled={guardandoMetodos}>
             {guardado ? <IcoCheck className="w-4 h-4" /> : null}
-            {guardado ? "Guardado" : "Guardar cambios"}
+            {guardandoMetodos ? "Guardando…" : guardado ? "Guardado" : "Guardar cambios"}
           </button>
         </div>
         <p className="text-sm text-gris mb-4">
@@ -250,62 +235,32 @@ export default function ConfiguracionPage() {
                 {msgClave.texto}
               </p>
             )}
-            <button className={btnPrimario} onClick={cambiarClave}>
-              Actualizar clave
+            <button className={btnPrimario} onClick={cambiar} disabled={cambiandoClave}>
+              {cambiandoClave ? "Actualizando…" : "Actualizar clave"}
             </button>
           </div>
         </Card>
 
-        {/* Respaldos */}
+        {/* Respaldo */}
         <Card className="p-5">
           <h2 className="font-display font-bold text-negro mb-1 flex items-center gap-2">
-            <IcoRespaldo className="w-5 h-5 text-rojo" /> Respaldos
+            <IcoRespaldo className="w-5 h-5 text-rojo" /> Respaldo de datos
           </h2>
           <p className="text-sm text-gris mb-4 leading-relaxed">
-            En esta fase los datos viven en este dispositivo. Descarga un respaldo con frecuencia
-            y guárdalo en un lugar seguro. Cuando se conecte la base de datos en la nube, esto será
-            automático.
+            Tus datos se guardan de forma segura en la base de datos central del sitio, no en este
+            dispositivo. Aun así, puedes descargar una copia para tus registros cuando quieras.
           </p>
           <div className="flex flex-wrap gap-2">
             <button className={btnPrimario} onClick={exportar}>
-              <IcoDescargar className="w-4 h-4" /> Descargar respaldo
+              <IcoDescargar className="w-4 h-4" /> Descargar copia (JSON)
             </button>
-            <button className={btnSecundario} onClick={() => fileRef.current?.click()}>
-              <IcoSubir className="w-4 h-4" /> Restaurar respaldo
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={(e) => leerRespaldo(e.target.files?.[0])}
-            />
           </div>
-          {errorImport && (
-            <p className="mt-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{errorImport}</p>
-          )}
           <div className="mt-4 rounded-xl bg-crema px-4 py-3 text-xs text-negro-suave space-y-1">
             <p>📦 Pedidos: <strong>{db.pedidos.length}</strong> · Pagos: <strong>{db.pagos.length}</strong> · Clientes: <strong>{db.clientes.length}</strong></p>
             <p>👥 Usuarios: <strong>{db.usuarios.length}</strong> · Productos: <strong>{db.productos.length}</strong> · Movimientos: <strong>{db.movimientos.length}</strong></p>
           </div>
         </Card>
       </div>
-
-      {importando && (
-        <Confirmar
-          titulo="Restaurar respaldo"
-          mensaje={`El respaldo contiene ${importando.pedidos?.length ?? 0} pedidos, ${
-            importando.pagos?.length ?? 0
-          } pagos y ${importando.clientes?.length ?? 0} clientes. Al restaurarlo se REEMPLAZAN todos los datos actuales del panel. ¿Continuar?`}
-          textoBoton="Sí, restaurar"
-          destructivo
-          onConfirmar={() => {
-            reemplazarDb(importando);
-            setImportando(null);
-          }}
-          onCancelar={() => setImportando(null)}
-        />
-      )}
     </>
   );
 }

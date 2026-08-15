@@ -58,7 +58,7 @@ const NAV = [
 ];
 
 function Login() {
-  const { login, db } = useAdmin();
+  const { login } = useAdmin();
   const [usuario, setUsuario] = useState("");
   const [clave, setClave] = useState("");
   const [error, setError] = useState<string | null>(null);

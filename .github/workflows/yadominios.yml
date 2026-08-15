@@ -1,8 +1,9 @@
 name: Publicar en YaDominios Cloud
 
-# Compila el sitio estático (Next.js output: export → carpeta out/) y publica
-# el resultado en la rama `yapanel-build`. El panel de YaDominios Cloud se
-# conecta a ESA rama; cada push a main la reconstruye y republica sola.
+# Compila el sitio (Next.js output: export → out/) y arma el paquete para
+# YaDominios Cloud: worker (_worker.js) + wrangler.jsonc + assets/ (el sitio).
+# Publica el resultado en la rama `yapanel-build`, a la que se conecta el panel.
+# Cada push a main la reconstruye y republica sola.
 
 on:
   push:
@@ -35,11 +36,19 @@ jobs:
       - name: Compilar el sitio estático (genera out/)
         run: npm run build
 
-      - name: Publicar out/ en la rama yapanel-build
+      - name: Ensamblar worker + assets para YaDominios
+        run: |
+          rm -rf publish
+          mkdir -p publish/assets
+          cp -r out/. publish/assets/
+          cp worker/_worker.js publish/_worker.js
+          cp worker/wrangler.jsonc publish/wrangler.jsonc
+
+      - name: Publicar en la rama yapanel-build
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./out
+          publish_dir: ./publish
           publish_branch: yapanel-build
           force_orphan: true
-          commit_message: "build: publicación estática para YaDominios Cloud"
+          commit_message: "build: worker + sitio para YaDominios Cloud"

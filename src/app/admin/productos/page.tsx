@@ -31,7 +31,7 @@ import {
 import { IcoPlus, IcoEditar, IcoBasura, IcoProductos } from "@/components/admin/icons";
 
 export default function ProductosPage() {
-  const { db, mutar } = useAdmin();
+  const { db, aplicar } = useAdmin();
   const [busqueda, setBusqueda] = useState("");
   const [filtroCat, setFiltroCat] = useState<CategoriaProducto | "todas">("todas");
   const [editando, setEditando] = useState<ProductoAdmin | "nuevo" | null>(null);
@@ -47,9 +47,13 @@ export default function ProductosPage() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [db.productos, busqueda, filtroCat]);
 
-  const borrar = (p: ProductoAdmin) => {
-    mutar((d) => ({ ...d, productos: d.productos.filter((x) => x.id !== p.id) }));
-    setBorrando(null);
+  const borrar = async (p: ProductoAdmin) => {
+    try {
+      await aplicar([{ accion: "delete", tabla: "productos", id: p.id }]);
+      setBorrando(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "No se pudo eliminar.");
+    }
   };
 
   return (
@@ -200,7 +204,7 @@ function ProductoForm({
   producto: ProductoAdmin | null;
   onClose: () => void;
 }) {
-  const { mutar } = useAdmin();
+  const { aplicar } = useAdmin();
   const [nombre, setNombre] = useState(producto?.nombre ?? "");
   const [categoria, setCategoria] = useState<CategoriaProducto>(producto?.categoria ?? "harina");
   const [presentacion, setPresentacion] = useState(producto?.presentacion ?? "");
@@ -208,8 +212,9 @@ function ProductoForm({
   const [stockMinimo, setStockMinimo] = useState(String(producto?.stockMinimo ?? 10));
   const [activo, setActivo] = useState(producto?.activo ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!nombre.trim()) return setError("El nombre del producto es obligatorio.");
     const datos = {
       nombre: nombre.trim(),
@@ -219,18 +224,18 @@ function ProductoForm({
       stockMinimo: Math.max(0, parseInt(stockMinimo) || 0),
       activo,
     };
-    if (producto) {
-      mutar((d) => ({
-        ...d,
-        productos: d.productos.map((p) => (p.id === producto.id ? { ...p, ...datos } : p)),
-      }));
-    } else {
-      mutar((d) => ({
-        ...d,
-        productos: [{ id: uid(), stock: 0, ...datos }, ...d.productos],
-      }));
+    const fila = producto
+      ? { ...producto, ...datos }
+      : { id: uid(), stock: 0, ...datos };
+    setGuardando(true);
+    try {
+      await aplicar([{ accion: "upsert", tabla: "productos", fila }]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      setGuardando(false);
     }
-    onClose();
   };
 
   return (
@@ -298,8 +303,8 @@ function ProductoForm({
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          {producto ? "Guardar cambios" : "Crear producto"}
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : producto ? "Guardar cambios" : "Crear producto"}
         </button>
       </div>
     </Modal>
@@ -309,13 +314,14 @@ function ProductoForm({
 // ---------- Ajuste de stock ----------
 
 function AjusteForm({ producto, onClose }: { producto: ProductoAdmin; onClose: () => void }) {
-  const { mutar, sesion } = useAdmin();
+  const { aplicar, sesion } = useAdmin();
   const [tipo, setTipo] = useState<TipoMovimiento>("entrada");
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
-  const guardar = () => {
+  const guardar = async () => {
     const n = parseInt(cantidad) || 0;
     if (n <= 0) return setError("Indica la cantidad del movimiento.");
     const signo = TIPOS_MOVIMIENTO[tipo].signo;
@@ -329,14 +335,19 @@ function AjusteForm({ producto, onClose }: { producto: ProductoAdmin; onClose: (
       fecha: hoyIso(),
       usuario: sesion?.nombre ?? "—",
     };
-    mutar((d) => ({
-      ...d,
-      movimientos: [mov, ...d.movimientos],
-      productos: d.productos.map((p) =>
-        p.id === producto.id ? { ...p, stock: Math.max(0, p.stock + signo * n) } : p
-      ),
-    }));
-    onClose();
+    const nuevoStock = Math.max(0, producto.stock + signo * n);
+    setGuardando(true);
+    try {
+      await aplicar([
+        { accion: "upsert", tabla: "movimientos", fila: mov as unknown as Record<string, unknown> },
+        { accion: "upsert", tabla: "productos", fila: { id: producto.id, stock: nuevoStock } },
+      ]);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar.");
+    } finally {
+      setGuardando(false);
+    }
   };
 
   return (
@@ -377,8 +388,8 @@ function AjusteForm({ producto, onClose }: { producto: ProductoAdmin; onClose: (
         <button className={btnSuave} onClick={onClose}>
           Cancelar
         </button>
-        <button className={btnPrimario} onClick={guardar}>
-          Guardar movimiento
+        <button className={btnPrimario} onClick={guardar} disabled={guardando}>
+          {guardando ? "Guardando…" : "Guardar movimiento"}
         </button>
       </div>
     </Modal>
