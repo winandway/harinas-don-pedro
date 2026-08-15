@@ -1,0 +1,8 @@
+{
+  // Worker puro (sin capa de assets): atiende TODAS las rutas, incluida "/",
+  // y sirve el sitio desde R2 (env.BUCKET). env.DB y env.BUCKET los inyecta
+  // YaDominios automáticamente.
+  "name": "harinadonpedro",
+  "main": "server.js",
+  "compatibility_date": "2026-07-01"
+}
