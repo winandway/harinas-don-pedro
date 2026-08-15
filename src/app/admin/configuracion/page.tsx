@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import type { DB, MetodoPago } from "@/lib/admin/types";
 import { METODOS, ORDEN_METODOS } from "@/lib/admin/catalogos";
 import { useAdmin } from "@/lib/admin/store";
+import { hashClave, verificarClave } from "@/lib/admin/auth";
 import { descargarJson } from "@/lib/admin/format";
 import { empresa } from "@/lib/site";
 import {
@@ -53,18 +54,19 @@ export default function ConfiguracionPage() {
   const [claveRepite, setClaveRepite] = useState("");
   const [msgClave, setMsgClave] = useState<{ ok: boolean; texto: string } | null>(null);
 
-  const cambiarClave = () => {
+  const cambiarClave = async () => {
     const yo = db.usuarios.find((u) => u.id === sesion?.usuarioId);
     if (!yo) return;
-    if (yo.clave !== claveActual)
+    if (!(await verificarClave(claveActual, yo.clave)))
       return setMsgClave({ ok: false, texto: "La clave actual no es correcta." });
     if (claveNueva.length < 6)
       return setMsgClave({ ok: false, texto: "La clave nueva debe tener al menos 6 caracteres." });
     if (claveNueva !== claveRepite)
       return setMsgClave({ ok: false, texto: "Las claves nuevas no coinciden." });
+    const hash = await hashClave(claveNueva);
     mutar((d) => ({
       ...d,
-      usuarios: d.usuarios.map((u) => (u.id === yo.id ? { ...u, clave: claveNueva } : u)),
+      usuarios: d.usuarios.map((u) => (u.id === yo.id ? { ...u, clave: hash } : u)),
       config: { ...d.config, claveInicial: false },
     }));
     setClaveActual("");

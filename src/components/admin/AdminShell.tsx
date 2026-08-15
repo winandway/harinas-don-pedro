@@ -7,7 +7,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAdmin, tasaActual } from "@/lib/admin/store";
-import { CLAVE_INICIAL } from "@/lib/admin/defaults";
 import { ROLES } from "@/lib/admin/catalogos";
 import { fmtBs } from "@/lib/admin/format";
 import {
@@ -64,9 +63,9 @@ function Login() {
   const [clave, setClave] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const enviar = (e: React.FormEvent) => {
+  const enviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(login(usuario, clave));
+    setError(await login(usuario, clave));
   };
 
   return (
@@ -122,15 +121,6 @@ function Login() {
           >
             <IcoCandado className="w-4 h-4" /> Entrar al panel
           </button>
-
-          {db.config.claveInicial && (
-            <div className="rounded-xl bg-amarillo/15 border border-amarillo/40 px-3.5 py-3 text-xs text-negro-suave leading-relaxed">
-              <strong className="text-rojo-oscuro">Primer acceso:</strong> usuario{" "}
-              <code className="font-mono bg-white rounded px-1">admin</code> y clave{" "}
-              <code className="font-mono bg-white rounded px-1">{CLAVE_INICIAL}</code>. Cambia la
-              clave en <strong>Configuración</strong> apenas entres.
-            </div>
-          )}
         </form>
         <p className="text-center text-white/50 text-xs mt-4">
           Acceso exclusivo del equipo Don Pedro

@@ -13,6 +13,7 @@ import {
 } from "react";
 import type { DB, Pago, Pedido, Sesion } from "./types";
 import { dbInicial } from "./defaults";
+import { verificarClave } from "./auth";
 
 const KEY_DB = "hdp-admin-db-v1";
 const KEY_SESION = "hdp-admin-sesion-v1";
@@ -21,7 +22,7 @@ interface StoreCtx {
   db: DB;
   ready: boolean;
   sesion: Sesion | null;
-  login: (usuario: string, clave: string) => string | null;
+  login: (usuario: string, clave: string) => Promise<string | null>;
   logout: () => void;
   // Mutador central: recibe el estado actual y devuelve el nuevo.
   mutar: (fn: (db: DB) => DB) => void;
@@ -80,11 +81,12 @@ export function AdminStoreProvider({ children }: { children: React.ReactNode }) 
   }, [db, ready]);
 
   const login = useCallback(
-    (usuario: string, clave: string): string | null => {
+    async (usuario: string, clave: string): Promise<string | null> => {
       const u = db.usuarios.find(
         (x) => x.usuario.toLowerCase() === usuario.trim().toLowerCase()
       );
-      if (!u || u.clave !== clave) return "Usuario o clave incorrectos.";
+      if (!u || !(await verificarClave(clave, u.clave)))
+        return "Usuario o clave incorrectos.";
       if (!u.activo) return "Este usuario está desactivado.";
       const s: Sesion = { usuarioId: u.id, nombre: u.nombre, usuario: u.usuario, rol: u.rol };
       setSesion(s);

@@ -3,7 +3,11 @@
 import type { Config, DB, MetodoConfig, MetodoPago, ProductoAdmin, Usuario } from "./types";
 import { ORDEN_METODOS } from "./catalogos";
 
-export const CLAVE_INICIAL = "donpedro1915";
+// Hash SHA-256 de la clave inicial del cliente. El texto real de la clave
+// NO se guarda en el código: solo su hash. La clave de acceso sigue siendo
+// la misma que usa el cliente; simplemente no aparece en los archivos.
+export const CLAVE_INICIAL_HASH =
+  "cd8e4d2206ccdcf45b0d6a1cd7c1e5d68d1b2eed5f859d67f760a9b58aa4ce39";
 
 function metodosVacios(): Record<MetodoPago, MetodoConfig> {
   const out = {} as Record<MetodoPago, MetodoConfig>;
@@ -46,7 +50,7 @@ export function usuarioInicial(ahora: string): Usuario {
     id: "usr-admin",
     nombre: "Administrador",
     usuario: "admin",
-    clave: CLAVE_INICIAL,
+    clave: CLAVE_INICIAL_HASH,
     rol: "superadmin",
     activo: true,
     creadoEl: ahora,

@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { Rol, Usuario } from "@/lib/admin/types";
 import { ROLES } from "@/lib/admin/catalogos";
 import { useAdmin } from "@/lib/admin/store";
+import { hashClave } from "@/lib/admin/auth";
 import { fmtFechaHora, hoyIso, uid } from "@/lib/admin/format";
 import {
   Card,
@@ -142,7 +143,7 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
 
   const esYo = usuario?.id === sesion?.usuarioId;
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!nombre.trim()) return setError("El nombre es obligatorio.");
     const u = user.trim().toLowerCase();
     if (!u) return setError("El nombre de usuario es obligatorio.");
@@ -161,6 +162,9 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
       return setError("No puedes quitar el último superadmin activo del panel.");
     }
 
+    // La clave se guarda cifrada (hash), nunca en texto plano.
+    const claveHash = clave ? await hashClave(clave) : undefined;
+
     if (usuario) {
       mutar((d) => ({
         ...d,
@@ -173,7 +177,7 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
                 rol,
                 telefono: telefono.trim() || undefined,
                 activo,
-                clave: clave ? clave : x.clave,
+                clave: claveHash ?? x.clave,
               }
             : x
         ),
@@ -186,7 +190,7 @@ function UsuarioForm({ usuario, onClose }: { usuario: Usuario | null; onClose: (
         id: uid(),
         nombre: nombre.trim(),
         usuario: u,
-        clave,
+        clave: claveHash ?? "",
         rol,
         telefono: telefono.trim() || undefined,
         activo,
